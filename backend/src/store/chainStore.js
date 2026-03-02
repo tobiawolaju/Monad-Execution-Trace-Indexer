@@ -69,7 +69,7 @@ export class ChainStore {
 
   getTransaction(txHash) {
     for (const block of this.getWindowBlocks()) {
-      const tx = block.transactions.find((t) => t.txHash === txHash);
+      const tx = block.transactions.find((t) => t.hash === txHash);
       if (tx) return { ...tx, blockHash: block.hash, blockHeight: block.blockHeight, nodeId: block.nodeId };
     }
     return null;

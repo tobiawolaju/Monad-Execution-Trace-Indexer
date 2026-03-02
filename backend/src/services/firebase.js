@@ -1,6 +1,7 @@
 import fs from 'fs';
 import admin from 'firebase-admin';
 import { config } from '../config/index.js';
+import { sanitizeForRTDB } from '../utils/normalize.js';
 
 let db;
 
@@ -24,27 +25,35 @@ export function initFirebase() {
     return null;
   }
 
+  const databaseURL = config.firebase.databaseURL || serviceAccount.databaseURL;
+  if (!databaseURL) {
+    console.warn('[firebase] Missing FIREBASE_DATABASE_URL/databaseURL: using in-memory mode only.');
+    return null;
+  }
+
   if (!admin.apps.length) {
     admin.initializeApp({
       credential: admin.credential.cert(serviceAccount),
-      ...(config.firebase.databaseURL || serviceAccount.databaseURL
-        ? { databaseURL: config.firebase.databaseURL || serviceAccount.databaseURL }
-        : {})
+      databaseURL
     });
   }
 
-  db = admin.firestore();
+  db = admin.database();
   return db;
 }
 
 export async function persistBlock(block) {
   if (!db) return;
+
   const id = `${block.nodeId}_${block.blockHeight}_${block.hash}`;
-  await db.collection('blocks').doc(id).set(block, { merge: true });
+  const sanitizedBlock = sanitizeForRTDB(block);
+
+  await db.ref(`blocks/${id}`).set(sanitizedBlock);
 }
 
 export async function removeBlock(block) {
   if (!db) return;
+
   const id = `${block.nodeId}_${block.blockHeight}_${block.hash}`;
-  await db.collection('blocks').doc(id).delete();
+  await db.ref(`blocks/${id}`).remove();
 }
