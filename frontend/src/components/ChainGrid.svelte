@@ -165,32 +165,34 @@
   <span><i class="dot canonical"></i>Canonical</span>
   <span><i class="dot pending"></i>Pending</span>
   <span><i class="dot rolled-back"></i>Rolled Back</span>
-  <button
-    class="live-btn"
-    on:click={onTogglePause}
-    aria-label={isPaused ? "Play live updates" : "Pause live updates"}
-    title={isPaused ? "Play" : "Pause"}
-  >
-    {#if isPaused}
-      &#9654;
-    {:else}
-      &#10074;&#10074;
-    {/if}
-  </button>
-  <button
-    class="live-btn jump-btn"
-    on:click={() => {
-      nowMs = Date.now();
-      onFollowLiveChange(true);
-      onJumpToLive();
-      tick().then(jumpToLiveEdge);
-    }}
-    disabled={isFollowingLive}
-    aria-label="Jump to live"
-    title="Jump to live"
-  >
-    Jump to Live
-  </button>
+  <div class="legend-controls">
+    <button
+      class="live-btn"
+      on:click={onTogglePause}
+      aria-label={isPaused ? "Play live updates" : "Pause live updates"}
+      title={isPaused ? "Play" : "Pause"}
+    >
+      {#if isPaused}
+        &#9654;
+      {:else}
+        &#10074;&#10074;
+      {/if}
+    </button>
+    <button
+      class="live-btn jump-btn"
+      on:click={() => {
+        nowMs = Date.now();
+        onFollowLiveChange(true);
+        onJumpToLive();
+        tick().then(jumpToLiveEdge);
+      }}
+      disabled={isFollowingLive}
+      aria-label="Jump to live"
+      title="Jump to live"
+    >
+      Jump to Live
+    </button>
+  </div>
 </div>
 
 <div class="board">
@@ -274,7 +276,6 @@
   }
 
   .live-btn {
-    margin-left: auto;
     border: 1px solid #d1d5db;
     background: #ffffff;
     color: #111827;
@@ -293,6 +294,13 @@
 
   .jump-btn {
     min-width: 96px;
+  }
+
+  .legend-controls {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 8px;
   }
 
   .board {
@@ -454,11 +462,7 @@
       font-size: 0.78rem;
     }
 
-    .live-btn {
-      margin-left: 0;
-    }
-
-    .legend > :last-child {
+    .legend-controls {
       margin-left: auto;
     }
 
