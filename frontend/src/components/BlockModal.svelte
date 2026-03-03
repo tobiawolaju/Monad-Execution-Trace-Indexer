@@ -77,7 +77,7 @@
 
   .modal {
     width: min(980px, 100%);
-    max-height: 85vh;
+    max-height: 88vh;
     overflow: auto;
     background: #fff;
     color: #111827;
@@ -151,8 +151,26 @@
   }
 
   @media (max-width: 720px) {
+    .overlay {
+      align-items: flex-end;
+      padding: 0;
+    }
+
+    .modal {
+      width: 100%;
+      max-height: 92vh;
+      border-radius: 12px 12px 0 0;
+      padding: 12px;
+    }
+
     .meta-grid {
       grid-template-columns: 1fr;
+      gap: 8px;
+    }
+
+    .tx-card {
+      margin: 6px 0;
+      font-size: 0.85rem;
     }
   }
 </style>

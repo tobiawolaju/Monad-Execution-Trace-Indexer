@@ -4,15 +4,17 @@
   export let blocks = [];
   export let onSelect = () => {};
   export let highlightedHashes = [];
+  export let isPaused = false;
+  export let onTogglePause = () => {};
 
   const statusColors = {
     canonical: "#22c55e",
     pending: "#facc15",
     "rolled-back": "#f97316",
   };
-  const rowHeight = 96;
-  const blockWidth = 160;
-  const blockHeight = 56;
+  let rowHeight = 96;
+  let blockWidth = 160;
+  let blockHeight = 56;
   const blockRadius = 9;
   const visibleWindowMs = 60 * 1000;
   const targetTickCount = 9;
@@ -25,6 +27,7 @@
   let followLive = true;
   let lastKnownBlockCount = 0;
   let nowTimer;
+  let viewportWidth = 1280;
 
   const sortedBlocks = (items) =>
     [...items].sort((a, b) => {
@@ -73,6 +76,10 @@
 
   $: nodeIds = [...new Set(blocks.map((b) => b.nodeId))].sort(nodeSort);
   $: highlightedSet = new Set(highlightedHashes);
+  $: isMobileLayout = viewportWidth <= 760;
+  $: blockWidth = isMobileLayout ? 124 : 160;
+  $: blockHeight = isMobileLayout ? 50 : 56;
+  $: rowHeight = isMobileLayout ? 82 : 96;
   $: minTime = nowMs - visibleWindowMs;
   $: maxTime = nowMs;
   $: spanMs = visibleWindowMs;
@@ -115,9 +122,19 @@
   }
 
   onMount(() => {
+    const handleResize = () => {
+      viewportWidth = window.innerWidth;
+    };
+    handleResize();
+    window.addEventListener("resize", handleResize);
+
     nowTimer = setInterval(() => {
-      nowMs = Date.now();
+      if (!isPaused) nowMs = Date.now();
     }, 1000);
+
+    return () => {
+      window.removeEventListener("resize", handleResize);
+    };
   });
 
   onDestroy(() => {
@@ -131,12 +148,15 @@
   <span><i class="dot rolled-back"></i>Rolled Back</span>
   <button
     class="live-btn"
-    on:click={() => {
-      followLive = true;
-      jumpToLiveEdge();
-    }}
+    on:click={onTogglePause}
+    aria-label={isPaused ? "Play live updates" : "Pause live updates"}
+    title={isPaused ? "Play" : "Pause"}
   >
-    {followLive ? "Following Live" : "Jump To Live"}
+    {#if isPaused}
+      &#9654;
+    {:else}
+      &#10074;&#10074;
+    {/if}
   </button>
 </div>
 
@@ -172,8 +192,10 @@
         {#each row.blocks as block (block.hash)}
           <button
             class="block status-{block.status}"
-            class:new-block={highlightedSet.has(`${block.nodeId}:${block.hash}`)}
-            style={`left:${block.x - blockWidth / 2}px; width:${blockWidth}px; height:${blockHeight}px; border-radius:${blockRadius}px`}
+            class:new-block={highlightedSet.has(
+              `${block.nodeId}:${block.hash}`,
+            )}
+            style={`--block-half:${blockHeight / 2}px; left:${block.x - blockWidth / 2}px; width:${blockWidth}px; height:${blockHeight}px; border-radius:${blockRadius}px`}
             title={`${block.nodeId} #${block.blockHeight} (${block.status})`}
             on:click={() => onSelect(block)}
           >
@@ -191,6 +213,7 @@
   .legend {
     display: flex;
     align-items: center;
+    flex-wrap: wrap;
     gap: 14px;
     font-size: 0.83rem;
     margin-bottom: 12px;
@@ -225,12 +248,14 @@
     font: inherit;
     border-radius: 8px;
     padding: 6px 10px;
+    min-width: 42px;
+    text-align: center;
     cursor: pointer;
   }
 
   .board {
     display: grid;
-    grid-template-columns: 180px 1fr;
+    grid-template-columns: clamp(96px, 16vw, 180px) minmax(0, 1fr);
     border: 1px solid #d1d5db;
     border-radius: 8px;
     overflow: hidden;
@@ -267,6 +292,7 @@
   .timeline-scroll {
     overflow-x: auto;
     overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
     scrollbar-color: #9443ff #ffffff;
     scrollbar-width: thin;
   }
@@ -307,11 +333,12 @@
     height: 4px;
     border-radius: 8px;
     opacity: 0.7;
+    background-color: #9443ff;
   }
 
   .block {
     position: absolute;
-    top: calc(50% - 28px);
+    top: calc(50% - var(--block-half, 28px));
     border: 1px solid #d1d5db;
     color: #ffffff;
     font-weight: 700;
@@ -377,5 +404,54 @@
 
   .status-rolled-back {
     border-left: 4px solid #f97316;
+  }
+
+  @media (max-width: 760px) {
+    .legend {
+      gap: 10px;
+      font-size: 0.78rem;
+    }
+
+    .live-btn {
+      margin-left: 0;
+    }
+
+    .legend > :last-child {
+      margin-left: auto;
+    }
+
+    .board {
+      grid-template-columns: 92px minmax(0, 1fr);
+    }
+
+    .corner {
+      height: 48px;
+      padding: 0 10px;
+      font-size: 0.72rem;
+    }
+
+    .node-label {
+      height: 82px;
+      padding: 0 10px;
+      font-size: 0.78rem;
+    }
+
+    .timeline-header {
+      height: 48px;
+    }
+
+    .tick span {
+      top: 6px;
+      left: 4px;
+      font-size: 0.68rem;
+    }
+
+    .block-main {
+      font-size: 0.74rem;
+    }
+
+    .block-sub {
+      font-size: 0.62rem;
+    }
   }
 </style>

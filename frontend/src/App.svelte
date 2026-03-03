@@ -6,6 +6,7 @@
   let blocks = [];
   let selectedBlock = null;
   let highlightedHashes = [];
+  let isPaused = false;
   let reconnectAttempt = 0;
   let reconnectTimer = null;
   let highlightTimer = null;
@@ -131,6 +132,7 @@
     };
 
     ws.onmessage = (event) => {
+      if (isPaused) return;
       try {
         const message = JSON.parse(event.data);
         if (message.type === 'blocks') applyLive(message.data);
@@ -154,7 +156,9 @@
     connectWebSocket();
     pruneTimer = setInterval(pruneOldBlocks, 5000);
     // Tight periodic backfill to smooth out inconsistent WS delivery timing.
-    syncTimer = setInterval(loadWindow, 2000);
+    syncTimer = setInterval(() => {
+      if (!isPaused) loadWindow();
+    }, 2000);
     return () => {
       shouldReconnect = false;
       clearTimeout(reconnectTimer);
@@ -167,7 +171,16 @@
 </script>
 
 <main>
-  <ChainGrid blocks={blocks} onSelect={handleSelectBlock} highlightedHashes={highlightedHashes} />
+  <ChainGrid
+    blocks={blocks}
+    onSelect={handleSelectBlock}
+    highlightedHashes={highlightedHashes}
+    isPaused={isPaused}
+    onTogglePause={() => {
+      isPaused = !isPaused;
+      if (!isPaused) loadWindow();
+    }}
+  />
   <BlockModal block={selectedBlock} onClose={() => (selectedBlock = null)} />
 </main>
 
@@ -179,14 +192,14 @@
 
   main {
     box-sizing: border-box;
-    padding: 14px;
+    padding: clamp(10px, 2vw, 16px);
     color: #111827;
     font-family: 'Segoe UI', Tahoma, Arial, sans-serif;
   }
 
   @media (max-width: 720px) {
     main {
-      padding: 12px;
+      padding: 10px;
     }
   }
 </style>
