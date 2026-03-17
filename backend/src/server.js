@@ -31,21 +31,12 @@ function parseNumber(value, { min = Number.MIN_SAFE_INTEGER, max = Number.MAX_SA
 }
 
 async function bootstrap() {
-  const app = express();
-  app.use(cors());
-  app.use(express.json());
-
-  // CRITICAL: We start listening immediately to satisfy Cloud Run health checks.
-  // We don't await anything before this line.
-  const server = http.createServer(app);
-  server.listen(config.port, '0.0.0.0', () => {
-    log('server.ready', { url: `http://0.0.0.0:${config.port}`, port: config.port });
-  });
-
   const firebaseManager = new FirebaseManager();
-  const rpcManager = new RpcManager(config.nodes, metrics);
-  const wsHub = new WsHub(server, { path: config.wsPath, broadcastWindowMs: config.broadcastWindowMs });
+  await firebaseManager.initFirebase();
+  await firebaseManager.verifyDatabaseConnection();
+  log('firebase.ready');
 
+  const rpcManager = new RpcManager(config.nodes, metrics);
   const reorgManager = new ReorgManager({
     windowSize: config.ingestion.lastBlocksWindow,
     metrics,
@@ -59,6 +50,13 @@ async function bootstrap() {
     }
   });
 
+  const app = express();
+  app.use(cors());
+  app.use(express.json());
+
+  const server = http.createServer(app);
+  const wsHub = new WsHub(server, { path: config.wsPath, broadcastWindowMs: config.broadcastWindowMs });
+
   const ingestionManager = new IngestionManager({
     rpcManager,
     firebaseManager,
@@ -67,21 +65,8 @@ async function bootstrap() {
     onCanonicalBlock: (block) => wsHub.enqueue(block)
   });
 
-  // Now we can handle intensive/fragile initialization in the background or sequentially
-  try {
-    firebaseManager.initFirebase();
-    await firebaseManager.verifyDatabaseConnection();
-    log('firebase.ready');
-
-    await ingestionManager.startIngestion();
-    log('ingestion.started', { nodes: config.nodes.map((n) => n.nodeId) });
-  } catch (error) {
-    log('bootstrap.init.warning', { message: error.message, stack: error.stack });
-    // We don't exit(1) here immediately because the server is already listening.
-    // However, for Cloud Run to stay healthy, it might need one of these to succeed.
-    // For now, let's allow the error to bubble up if it's truly fatal.
-    throw error;
-  }
+  await ingestionManager.startIngestion();
+  log('ingestion.started', { nodes: config.nodes.map((n) => n.nodeId) });
 
   app.use((req, _res, next) => {
     metrics.apiRequests += 1;
@@ -172,27 +157,29 @@ async function bootstrap() {
     }
   });
 
+  server.listen(config.port, () => {
+    log('server.ready', { url: `http://localhost:${config.port}` });
+  });
+
   const metricTimer = setInterval(() => {
-    if (ingestionManager && ingestionManager.blockQueues) {
-      log('metrics.minute', {
-        blocksProcessedPerMinute: metrics.blocksProcessed,
-        rpcErrors: metrics.rpcErrors,
-        queueDepth: Object.fromEntries(
-          [...ingestionManager.blockQueues.entries()].map(([nodeId, q]) => [nodeId, q.depth])
-        ),
-        traceQueueDepth: ingestionManager.traceQueue.depth,
-        rateLimitEvents: metrics.rateLimitEvents,
-        reorgCount: metrics.reorgCount
-      });
-    }
+    log('metrics.minute', {
+      blocksProcessedPerMinute: metrics.blocksProcessed,
+      rpcErrors: metrics.rpcErrors,
+      queueDepth: Object.fromEntries(
+        [...ingestionManager.blockQueues.entries()].map(([nodeId, q]) => [nodeId, q.depth])
+      ),
+      traceQueueDepth: ingestionManager.traceQueue.depth,
+      rateLimitEvents: metrics.rateLimitEvents,
+      reorgCount: metrics.reorgCount
+    });
     metrics.blocksProcessed = 0;
   }, config.metricsLogIntervalMs);
 
   const shutdown = () => {
     clearInterval(metricTimer);
-    if (ingestionManager) ingestionManager.stop();
-    if (rpcManager) rpcManager.close();
-    if (wsHub) wsHub.close();
+    ingestionManager.stop();
+    rpcManager.close();
+    wsHub.close();
     server.close(() => process.exit(0));
   };
 
@@ -201,12 +188,6 @@ async function bootstrap() {
 }
 
 bootstrap().catch((error) => {
-  console.error('BOOTSTRAP_FATAL_ERROR:', error);
-  console.error(JSON.stringify({ 
-    level: 'error', 
-    event: 'bootstrap.failed', 
-    message: error.message,
-    stack: error.stack
-  }));
+  console.error(JSON.stringify({ level: 'error', event: 'bootstrap.failed', message: error.message }));
   process.exit(1);
 });

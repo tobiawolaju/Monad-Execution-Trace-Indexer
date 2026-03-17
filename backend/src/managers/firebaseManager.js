@@ -18,10 +18,27 @@ function sanitizeKey(key) {
   return String(key).replace(/[.#$\[\]/]/g, '_');
 }
 
-function loadServiceAccount(path) {
+async function loadServiceAccount(path) {
   if (!path) throw new Error('Missing service account path (ServeiceAccuntJson)');
+
+  if (path.startsWith('http://') || path.startsWith('https://')) {
+    const response = await fetch(path);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch service account from URL: ${response.statusText}`);
+    }
+    const serviceAccount = await response.json();
+    if (serviceAccount.private_key) {
+      serviceAccount.private_key = serviceAccount.private_key.replace(/\\n/g, '\n');
+    }
+    return serviceAccount;
+  }
+
   const raw = fs.readFileSync(path, 'utf8');
-  return JSON.parse(raw);
+  const serviceAccount = JSON.parse(raw);
+  if (serviceAccount.private_key) {
+    serviceAccount.private_key = serviceAccount.private_key.replace(/\\n/g, '\n');
+  }
+  return serviceAccount;
 }
 
 export class FirebaseManager {
@@ -29,8 +46,8 @@ export class FirebaseManager {
     this.db = null;
   }
 
-  initFirebase() {
-    const serviceAccount = loadServiceAccount(config.firebase.serviceAccountJsonPath);
+  async initFirebase() {
+    const serviceAccount = await loadServiceAccount(config.firebase.serviceAccountJsonPath);
     const databaseURL = config.firebase.databaseURL || serviceAccount.databaseURL;
 
     if (!databaseURL) {
