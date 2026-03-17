@@ -229,22 +229,4 @@
   <BlockModal block={selectedBlock} onClose={() => (selectedBlock = null)} />
 </main>
 
-<style>
-  :global(body) {
-    margin: 0;
-    background: #ffffff;
-  }
 
-  main {
-    box-sizing: border-box;
-    padding: clamp(10px, 2vw, 16px);
-    color: #111827;
-    font-family: 'Segoe UI', Tahoma, Arial, sans-serif;
-  }
-
-  @media (max-width: 720px) {
-    main {
-      padding: 10px;
-    }
-  }
-</style>
