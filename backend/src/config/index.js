@@ -9,7 +9,7 @@ const defaultNodes = [
 ];
 
 export const config = {
-  port: Number(process.env.PORT || 4000),
+  port: 8080,
   wsPath: process.env.WS_PATH || '/ws',
   metricsLogIntervalMs: Number(process.env.METRICS_LOG_INTERVAL_MS || 60_000),
   broadcastWindowMs: Number(process.env.BROADCAST_WINDOW_MS || 60_000),

@@ -23,11 +23,9 @@
   let ws = null;
   let shouldReconnect = true;
 
-  const apiBase =
-    import.meta.env.VITE_API_BASE ||
-    `${window.location.protocol}//${window.location.hostname}:4000`;
-  const wsBase = apiBase.replace(/^http/i, 'ws');
-  const wsPath = import.meta.env.VITE_WS_PATH || '/ws';
+  const apiBase = 'https://monadtraceengine-265815053881.europe-west1.run.app';
+  const wsBase = 'wss://monadtraceengine-265815053881.europe-west1.run.app';
+  const wsPath = '/ws';
 
   function toMsTimestamp(value) {
     const numeric = Number(value);
