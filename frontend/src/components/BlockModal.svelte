@@ -25,7 +25,7 @@
 
 {#if block}
   <div class="overlay" role="button" tabindex="0" on:click={onClose} on:keydown={(e) => e.key === 'Escape' && onClose()}>
-    <div class="modal" role="dialog" aria-modal="true" aria-label="Block details" on:click|stopPropagation>
+      <button class="close-btn" on:click={onClose} aria-label="Close modal">&times;</button>
       <h3>Block Details</h3>
       <div class="meta-grid">
         <div><strong>Node</strong><span>{fmt(block.nodeId)}</span></div>
@@ -55,8 +55,6 @@
           {/each}
         {/if}
       </div>
-      <div class="actions">
-        <button on:click={onClose}>Close</button>
       </div>
     </div>
   </div>
