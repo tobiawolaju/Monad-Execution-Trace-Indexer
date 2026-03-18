@@ -1,8 +1,8 @@
 <script>
   import { onDestroy, onMount, tick } from "svelte";
-  import { Chart, BubbleController, LineController, PointElement, LineElement, LinearScale, Tooltip, Legend } from 'chart.js';
+  import { Chart, BarController, BarElement, LinearScale, Tooltip, Legend } from 'chart.js';
 
-  Chart.register(BubbleController, LineController, PointElement, LineElement, LinearScale, Tooltip, Legend);
+  Chart.register(BarController, BarElement, LinearScale, Tooltip, Legend);
 
   export let blocks = [];
   export let onSelect = () => {};
@@ -114,8 +114,9 @@
     if (!chartCanvas) return;
     if (chartInstance) chartInstance.destroy();
 
-    chartInstance = new Chart(chartCanvas, {
-      type: 'bubble',
+    const ctx = chartCanvas.getContext('2d');
+    chartInstance = new Chart(ctx, {
+      type: 'bar',
       data: {
         datasets: []
       },
@@ -123,9 +124,14 @@
         responsive: false,
         maintainAspectRatio: false,
         animation: false,
-        layout: { padding: { top: 10, bottom: 10 } },
+        layout: { padding: { top: 20, bottom: 20 } },
         scales: {
-          x: { display: false, type: 'linear', min: minTime, max: maxTime },
+          x: { 
+            display: false, 
+            type: 'linear', 
+            min: minTime, 
+            max: maxTime 
+          },
           y: { 
             display: true, 
             type: 'linear', 
@@ -134,7 +140,7 @@
             reverse: true,
             ticks: { display: false },
             grid: {
-              color: 'rgba(63, 63, 70, 0.5)',
+              color: 'rgba(63, 63, 70, 0.4)',
               drawBorder: false,
               lineWidth: 1
             }
@@ -143,17 +149,17 @@
         plugins: {
           legend: { display: false },
           tooltip: {
-            backgroundColor: 'rgba(18, 18, 20, 0.95)',
+            backgroundColor: 'rgba(18, 18, 20, 0.98)',
             titleColor: '#a855f7',
             bodyColor: '#fafafa',
             borderColor: 'rgba(168, 85, 247, 0.4)',
             borderWidth: 1,
             padding: 12,
-            cornerRadius: 10,
+            cornerRadius: 12,
             callbacks: {
               label: (ctx) => {
-                if (ctx.dataset.type === 'line') return null;
                 const b = ctx.raw.block;
+                if (!b) return null;
                 return [
                   `Block #${b.blockHeight}`,
                   `Hash: ${b.hash.slice(0, 12)}...`,
@@ -164,22 +170,19 @@
             }
           }
         },
-        onClick: (event, elements) => {
-          const activeElements = chartInstance.getElementsAtEventForMode(event, 'nearest', { intersect: true }, true);
-          if (activeElements.length > 0) {
-            const index = activeElements[0].index;
-            const datasetIndex = activeElements[0].datasetIndex;
-            const dataPoint = chartInstance.data.datasets[datasetIndex].data[index];
-            if (dataPoint.block) {
-              onSelect(dataPoint.block);
-            }
+        onClick: (event) => {
+          const points = chartInstance.getElementsAtEventForMode(event, 'nearest', { intersect: true }, true);
+          if (points.length) {
+            const { datasetIndex, index } = points[0];
+            const b = chartInstance.data.datasets[datasetIndex].data[index].block;
+            if (b) onSelect(b);
           }
         }
       }
     });
   }
 
-  $: if (chartInstance) {
+  $: if (chartInstance && nodeIds.length > 0) {
     chartInstance.options.scales.x.min = minTime;
     chartInstance.options.scales.x.max = maxTime;
     chartInstance.options.scales.y.max = nodeIds.length - 0.5;
@@ -189,41 +192,38 @@
     nodeIds.forEach((nodeId, nodeIdx) => {
       const nodeBlocks = blocks.filter(b => b.nodeId === nodeId).sort((a,b) => a.timestamp - b.timestamp);
       
-      // Connectors (Lines)
-      if (nodeBlocks.length > 1) {
-        datasets.push({
-          type: 'line',
-          label: `${nodeId}-connectors`,
-          data: nodeBlocks.map(b => ({ x: b.timestamp, y: nodeIdx })),
-          borderColor: 'rgba(255, 255, 255, 0.1)',
-          borderWidth: 2,
-          pointRadius: 0,
-          fill: false,
-          tension: 0,
-          order: 2
-        });
-      }
-
-      // Blocks (Bubbles)
+      // We use "floating" bars: [y_start, y_end]
+      // y_start = nodeIdx - (magnitude_scaled / 2)
+      // y_end = nodeIdx + (magnitude_scaled / 2)
+      // This centers the bar on the row.
+      
       datasets.push({
-        type: 'bubble',
         label: nodeId,
-        data: nodeBlocks.map(b => ({
-          x: b.timestamp,
-          y: nodeIdx,
-          r: Math.min(25, Math.max(8, Math.sqrt(b.transactions?.length || 0) * 4.5)),
-          block: b
-        })),
+        data: nodeBlocks.map(b => {
+          const txs = b.transactions?.length || 0;
+          const mag = Math.min(0.4, 0.1 + Math.sqrt(txs) * 0.05);
+          return {
+            x: b.timestamp,
+            y: [nodeIdx - mag, nodeIdx + mag],
+            block: b
+          };
+        }),
         backgroundColor: nodeBlocks.map(b => colorFor(b.status)),
-        borderColor: nodeBlocks.map(b => highlightedSet.has(`${b.nodeId}:${b.hash}`) ? '#ffffff' : 'rgba(0,0,0,0.1)'),
-        borderWidth: nodeBlocks.map(b => highlightedSet.has(`${b.nodeId}:${b.hash}`) ? 4 : 1),
-        hoverRadius: 32,
-        order: 1
+        borderColor: nodeBlocks.map(b => highlightedSet.has(`${b.nodeId}:${b.hash}`) ? '#ffffff' : 'rgba(255,255,255,0.1)'),
+        borderWidth: nodeBlocks.map(b => highlightedSet.has(`${b.nodeId}:${b.hash}`) ? 2 : 1),
+        barThickness: isMobileLayout ? 12 : 20,
+        borderRadius: 4
       });
     });
 
     chartInstance.data.datasets = datasets;
     chartInstance.update('none');
+  }
+
+  $: if (chartInstance && (timelineWidth || rowHeight)) {
+    tick().then(() => {
+        chartInstance.resize();
+    });
   }
 
   onMount(() => {
@@ -310,6 +310,8 @@
 <style>
   .chart-container canvas {
     display: block;
+    width: 100% !important;
+    height: 100% !important;
     cursor: crosshair;
   }
 </style>
