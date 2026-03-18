@@ -1,5 +1,8 @@
 <script>
   import { onDestroy, onMount, tick } from "svelte";
+  import { Chart, BubbleController, PointElement, LinearScale, Tooltip, Legend } from 'chart.js';
+
+  Chart.register(BubbleController, PointElement, LinearScale, Tooltip, Legend);
 
   export let blocks = [];
   export let onSelect = () => {};
@@ -18,9 +21,6 @@
     "rolled-back": "#f97316",
   };
   let rowHeight = 96;
-  let blockWidth = 160;
-  let blockHeight = 56;
-  const blockRadius = 9;
   const visibleWindowMs = 60 * 1000;
   const targetTickCount = 9;
   const tickStepsMs = [
@@ -29,17 +29,12 @@
 
   let nowMs = Date.now();
   let scroller;
+  let chartCanvas;
+  let chartInstance;
   let lastKnownBlockCount = 0;
   let nowTimer;
   let viewportWidth = 1280;
   let historyTriggerLocked = false;
-
-  const sortedBlocks = (items) =>
-    [...items].sort((a, b) => {
-      if (a.timestamp !== b.timestamp) return a.timestamp - b.timestamp;
-      if (a.blockHeight !== b.blockHeight) return a.blockHeight - b.blockHeight;
-      return a.hash.localeCompare(b.hash);
-    });
 
   const nodeSort = (a, b) => {
     const aNum = Number(a.replace(/\D+/g, ""));
@@ -65,7 +60,6 @@
   };
 
   const colorFor = (status) => statusColors[status] || "#94a3b8";
-  const shortHash = (hash) => (hash ? `${hash.slice(0, 8)}...` : "N/A");
 
   function jumpToLiveEdge() {
     if (!scroller) return;
@@ -94,38 +88,19 @@
   $: nodeIds = [...new Set(blocks.map((b) => b.nodeId))].sort(nodeSort);
   $: highlightedSet = new Set(highlightedHashes);
   $: isMobileLayout = viewportWidth <= 760;
-  $: blockWidth = isMobileLayout ? 124 : 160;
-  $: blockHeight = isMobileLayout ? 50 : 56;
   $: rowHeight = isMobileLayout ? 82 : 96;
   $: dataMinTs = blocks.length ? Math.min(...blocks.map((b) => b.timestamp)) : nowMs - visibleWindowMs;
   $: dataMaxTs = blocks.length ? Math.max(...blocks.map((b) => b.timestamp)) : nowMs;
   $: minTime = Math.min(dataMinTs, nowMs - visibleWindowMs);
   $: maxTime = Math.max(dataMaxTs, nowMs);
   $: spanMs = Math.max(visibleWindowMs, maxTime - minTime);
-  $: timelineWidth = Math.max(1200, Math.round((spanMs / 1000) * 1.1));
+  $: timelineWidth = Math.max(1200, Math.round((spanMs / 1000) * 80)); // 80px per second for better visibility
   $: toX = (timestamp) => ((timestamp - minTime) / spanMs) * timelineWidth;
 
-  $: rows = nodeIds.map((nodeId) => {
-    const positioned = sortedBlocks(
-      blocks.filter((b) => b.nodeId === nodeId),
-    ).map((block) => ({
-      ...block,
-      x: toX(block.timestamp),
-    }));
-
-    const connectors = positioned.slice(1).map((block, index) => {
-      const previous = positioned[index];
-      const left = previous.x + blockWidth / 2;
-      const right = block.x - blockWidth / 2;
-      return {
-        left,
-        width: Math.max(8, right - left),
-        status: block.status,
-      };
-    });
-
-    return { nodeId, blocks: positioned, connectors };
-  });
+  $: if (isFollowingLive && scroller && blocks.length !== lastKnownBlockCount) {
+    lastKnownBlockCount = blocks.length;
+    tick().then(jumpToLiveEdge);
+  }
 
   $: tickStep = pickTickStep(spanMs);
   $: firstTick = Math.ceil(minTime / tickStep) * tickStep;
@@ -135,9 +110,120 @@
     return values;
   })();
 
-  $: if (isFollowingLive && scroller && blocks.length !== lastKnownBlockCount) {
-    lastKnownBlockCount = blocks.length;
-    tick().then(jumpToLiveEdge);
+  function initChart() {
+    if (!chartCanvas) return;
+    if (chartInstance) chartInstance.destroy();
+
+    chartInstance = new Chart(chartCanvas, {
+      type: 'bubble',
+      data: {
+        datasets: []
+      },
+      options: {
+        responsive: false,
+        maintainAspectRatio: false,
+        animation: false,
+        layout: { padding: { top: 10, bottom: 10 } },
+        scales: {
+          x: { display: false, type: 'linear', min: minTime, max: maxTime },
+          y: { 
+            display: true, 
+            type: 'linear', 
+            min: -0.5, 
+            max: nodeIds.length - 0.5, 
+            reverse: true,
+            ticks: { display: false },
+            grid: {
+              color: 'rgba(63, 63, 70, 0.5)',
+              drawBorder: false,
+              lineWidth: 1
+            }
+          }
+        },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            backgroundColor: 'rgba(18, 18, 20, 0.95)',
+            titleColor: '#a855f7',
+            bodyColor: '#fafafa',
+            borderColor: 'rgba(168, 85, 247, 0.4)',
+            borderWidth: 1,
+            padding: 12,
+            cornerRadius: 10,
+            callbacks: {
+              label: (ctx) => {
+                if (ctx.dataset.type === 'line') return null;
+                const b = ctx.raw.block;
+                return [
+                  `Block #${b.blockHeight}`,
+                  `Hash: ${b.hash.slice(0, 12)}...`,
+                  `Transactions: ${b.transactions?.length || 0}`,
+                  `Status: ${b.status}`
+                ];
+              }
+            }
+          }
+        },
+        onClick: (event, elements) => {
+          const activeElements = chartInstance.getElementsAtEventForMode(event, 'nearest', { intersect: true }, true);
+          if (activeElements.length > 0) {
+            const index = activeElements[0].index;
+            const datasetIndex = activeElements[0].datasetIndex;
+            const dataPoint = chartInstance.data.datasets[datasetIndex].data[index];
+            if (dataPoint.block) {
+              onSelect(dataPoint.block);
+            }
+          }
+        }
+      }
+    });
+  }
+
+  $: if (chartInstance) {
+    chartInstance.options.scales.x.min = minTime;
+    chartInstance.options.scales.x.max = maxTime;
+    chartInstance.options.scales.y.max = nodeIds.length - 0.5;
+
+    const datasets = [];
+
+    nodeIds.forEach((nodeId, nodeIdx) => {
+      const nodeBlocks = blocks.filter(b => b.nodeId === nodeId).sort((a,b) => a.timestamp - b.timestamp);
+      
+      // Connectors (Lines)
+      if (nodeBlocks.length > 1) {
+        datasets.push({
+          type: 'line',
+          label: `${nodeId}-connectors`,
+          data: nodeBlocks.map(b => ({ x: b.timestamp, y: nodeIdx })),
+          borderColor: 'rgba(255, 255, 255, 0.1)',
+          borderWidth: 2,
+          pointRadius: 0,
+          fill: false,
+          tension: 0,
+          order: 2
+        });
+      }
+
+      // Blocks (Bubbles)
+      datasets.push({
+        type: 'bubble',
+        label: nodeId,
+        data: nodeBlocks.map(b => ({
+          x: b.timestamp,
+          y: nodeIdx,
+          r: Math.min(25, Math.max(8, Math.sqrt(b.transactions?.length || 0) * 4.5)),
+          block: b
+        })),
+        backgroundColor: nodeBlocks.map(b => colorFor(b.status)),
+        borderColor: nodeBlocks.map(b => highlightedSet.has(`${b.nodeId}:${b.hash}`) ? '#ffffff' : 'rgba(0,0,0,0.1)'),
+        borderWidth: nodeBlocks.map(b => highlightedSet.has(`${b.nodeId}:${b.hash}`) ? 4 : 1),
+        hoverRadius: 32,
+        order: 1
+      });
+    });
+
+    chartInstance.data.datasets = datasets;
+    chartInstance.update('none');
   }
 
   onMount(() => {
@@ -151,6 +237,8 @@
       if (!isPaused && isFollowingLive) nowMs = Date.now();
     }, 1000);
 
+    initChart();
+
     return () => {
       window.removeEventListener("resize", handleResize);
     };
@@ -158,6 +246,7 @@
 
   onDestroy(() => {
     clearInterval(nowTimer);
+    if (chartInstance) chartInstance.destroy();
   });
 </script>
 
@@ -198,8 +287,8 @@
 <div class="board">
   <div class="left-column">
     <div class="corner">Nodes</div>
-    {#each rows as row}
-      <div class="node-label">{row.nodeId}</div>
+    {#each nodeIds as nodeId}
+      <div class="node-label" style="height: {rowHeight}px">{nodeId}</div>
     {/each}
   </div>
 
@@ -212,36 +301,18 @@
       {/each}
     </div>
 
-    {#each rows as row}
-      <div
-        class="track"
-        style={`width:${timelineWidth}px; height:${rowHeight}px`}
-      >
-        {#each row.connectors as connector}
-          <div
-            class="connector"
-            style={`left:${connector.left}px; width:${connector.width}px; background:${colorFor(connector.status)}`}
-          ></div>
-        {/each}
-
-        {#each row.blocks as block (block.hash)}
-          <button
-            class="block status-{block.status}"
-            class:new-block={highlightedSet.has(
-              `${block.nodeId}:${block.hash}`,
-            )}
-            style={`--block-half:${blockHeight / 2}px; left:${block.x - blockWidth / 2}px; width:${blockWidth}px; height:${blockHeight}px; border-radius:${blockRadius}px`}
-            title={`${block.nodeId} #${block.blockHeight} (${block.status})`}
-            on:click={() => onSelect(block)}
-          >
-            <span class="block-main">#{block.blockHeight}</span>
-            <span class="block-sub">{shortHash(block.hash)}</span>
-            <span class="block-sub">{ago(block.timestamp, nowMs)}</span>
-          </button>
-        {/each}
-      </div>
-    {/each}
+    <div class="chart-container" style="width: {timelineWidth}px; height: {nodeIds.length * rowHeight}px; position: relative;">
+      <canvas bind:this={chartCanvas} width={timelineWidth} height={nodeIds.length * rowHeight}></canvas>
+    </div>
   </div>
 </div>
+
+<style>
+  .chart-container canvas {
+    display: block;
+    cursor: crosshair;
+  }
+</style>
+
 
 
