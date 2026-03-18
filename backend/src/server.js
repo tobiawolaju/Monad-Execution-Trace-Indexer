@@ -175,8 +175,17 @@ async function bootstrap() {
     metrics.blocksProcessed = 0;
   }, config.metricsLogIntervalMs);
 
+  const cleanupTimer = setInterval(async () => {
+    try {
+      await firebaseManager.cleanupOldData(5 * 60 * 1000); // 5 minutes
+    } catch (error) {
+      log('firebase.cleanup.error', { message: error.message });
+    }
+  }, 60_000); // Check every minute
+
   const shutdown = () => {
     clearInterval(metricTimer);
+    clearInterval(cleanupTimer);
     ingestionManager.stop();
     rpcManager.close();
     wsHub.close();

@@ -94,6 +94,7 @@ export class FirebaseManager {
       updates[`transactions/${txKey}`] = sanitizeForRTDB({
         txHash: tx.hash,
         blockHeight: block.blockHeight,
+        timestamp: block.timestamp,
         from: tx.from,
         to: tx.to,
         gasUsed: tx.gasUsed ?? null,
@@ -102,6 +103,7 @@ export class FirebaseManager {
 
       updates[`traces/${txKey}`] = sanitizeForRTDB({
         txHash: tx.hash,
+        timestamp: block.timestamp,
         opcodeSummary: tracesByTxHash[tx.hash]?.opcodeSummary ?? {},
         executionMetadata: tracesByTxHash[tx.hash]?.executionMetadata ?? {},
         parallelGroup: tracesByTxHash[tx.hash]?.parallelGroup ?? null
@@ -118,6 +120,69 @@ export class FirebaseManager {
       updates[`blocks/${h}`] = null;
     }
     await this.db.ref().update(updates);
+  }
+
+  async cleanupOldData(maxAgeMs = 5 * 60 * 1000) {
+    if (!this.db) throw new Error('Firebase not initialized');
+    
+    const cutoffTs = Date.now() - maxAgeMs;
+    console.log(`Cleanup: Removing data older than ${maxAgeMs / 60000} minutes (before ${new Date(cutoffTs).toISOString()})`);
+
+    try {
+      // Find old blocks.
+      const oldBlocksRef = this.db.ref('blocks').orderByChild('timestamp').endAt(cutoffTs).limitToFirst(500);
+      const snap = await oldBlocksRef.get();
+      if (!snap.exists()) {
+        console.log('Cleanup: No old blocks found.');
+        return;
+      }
+
+      const oldBlocks = snap.val();
+      const updates = {};
+      let totalDeleted = 0;
+
+      for (const [height, block] of Object.entries(oldBlocks)) {
+        updates[`blocks/${height}`] = null;
+        if (block.hash) {
+          const hashKey = sanitizeKey(block.hash);
+          updates[`blockHashIndex/${hashKey}`] = null;
+          
+          // Note: In an ideal world, we would also find the transactions of this block.
+          // But since we don't store a list of hashes in the block object, we'd need to search.
+          // However, we can use the fact that we have transactions referenced by the same hashKey if they are single-node traces.
+          // The current indexer uses block-hash as the key for transactions and traces if it's a "bundle".
+          // Wait, look at line 91-109 in writeBlockBundle: it uses `sanitizeKey(tx.hash)`.
+        }
+        totalDeleted += 1;
+      }
+
+      // Special case: if there are many transactions, we might not know their hashes easily.
+      // But we can clean up the transactions and traces by their own timestamp if we added one.
+      // Since they don't have one, we can either:
+      // 1. Just clear the main folders if the whole thing is requested.
+      // 2. Clear anything older than X blocks.
+      
+      // Let's stick to the user's "simply delete the whole thing" if it's getting too big, 
+      // but try the node-by-node approach first.
+      
+      await this.db.ref().update(updates);
+      console.log(`Cleanup: Deleted ${totalDeleted} blocks and their hash index entries.`);
+
+      // Also cleanup transactions and traces independently using their own indices.
+      const oldTxsRef = this.db.ref('transactions').orderByChild('timestamp').endAt(cutoffTs).limitToFirst(500);
+      const txSnap = await oldTxsRef.get();
+      if (txSnap.exists()) {
+        const txUpdates = {};
+        Object.keys(txSnap.val()).forEach(key => {
+          txUpdates[`transactions/${key}`] = null;
+          txUpdates[`traces/${key}`] = null;
+        });
+        await this.db.ref().update(txUpdates);
+        console.log(`Cleanup: Deleted ${Object.keys(txUpdates).length / 2} transactions and traces.`);
+      }
+    } catch (error) {
+      console.error('Cleanup: Error during data removal:', error.message);
+    }
   }
 
   async loadHistoricalBlocks({ beforeTs, limit = 200 }) {

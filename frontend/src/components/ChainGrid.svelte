@@ -1,8 +1,8 @@
 <script>
   import { onDestroy, onMount, tick } from "svelte";
-  import { Chart, BubbleController, PointElement, LinearScale, Tooltip, Legend } from 'chart.js';
+  import { Chart, BubbleController, LineController, PointElement, LineElement, LinearScale, Tooltip, Legend } from 'chart.js';
 
-  Chart.register(BubbleController, PointElement, LinearScale, Tooltip, Legend);
+  Chart.register(BubbleController, LineController, PointElement, LineElement, LinearScale, Tooltip, Legend);
 
   export let blocks = [];
   export let onSelect = () => {};
