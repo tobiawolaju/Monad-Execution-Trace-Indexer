@@ -2,10 +2,10 @@
   <img src="./screenshots/logo.png" height="120"/>
 </p>
 
-<h1 align="center">MonadTraceEngine</h1>
+<h1 align="center">MoyakiTraceEngine</h1>
 
 <p align="center">
-Production-style multi-node blockchain indexing engine with reorg detection, rate-limit resilience, and real-time execution trace streaming.
+Webbased multi-node blockchain indexing engine for Monad mainet with reorg detection, rate-limit resilience, and real-time execution trace streaming.
 </p>
 
 <p align="center">
@@ -16,7 +16,7 @@ Production-style multi-node blockchain indexing engine with reorg detection, rat
 
 ## Overview
 
-MonadTraceEngine is a backend-focused blockchain infrastructure project designed to demonstrate production-grade ingestion, reliability engineering, and real-time observability.
+MoyakiTraceEngine is a backend-focused blockchain infrastructure project designed to demonstrate production-grade ingestion, reliability engineering, and real-time observability.
 
 It ingests blocks from multiple RPC nodes, detects consensus divergence, handles reorg rollbacks, extracts execution traces, and streams normalized data to a live frontend dashboard.
 
@@ -210,8 +210,7 @@ Services:
 ## Environment Variables (Backend)
 
 | Variable                           | Default | Description                          |
-| ---------------------------------- | ------- | ------------------------------------ |
-| `PORT`                             | `4000`  | Backend HTTP port                    |
+| ---------------------------------- | ------- | ------------------------------------ |                |
 | `WS_PATH`                          | `/ws`   | WebSocket endpoint path              |
 | `POLL_INTERVAL_MS`                 | `3000`  | Poll cadence for HTTP RPC nodes      |
 | `PER_NODE_BLOCK_CONCURRENCY`       | `5`     | Block-processing workers per node    |
